@@ -201,11 +201,19 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '..', 'client', 'public')));
 
 // ============================================================================
+// SHELL DETECTION (Unix/Windows compatibility)
+// ============================================================================
+
+const isWindows = process.platform === 'win32';
+const defaultShell = isWindows ? 'cmd.exe' : '/bin/bash';
+const shellFlag = isWindows ? '/c' : '-c';
+
+// ============================================================================
 // API ENDPOINTS
 // ============================================================================
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0', environment: NODE_ENV });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0', environment: NODE_ENV, os: process.platform });
 });
 
 app.get('/api/cwd', (req, res) => {
@@ -257,7 +265,7 @@ app.post('/api/execute', (req, res) => {
   }
   logger.info('Command execution requested', { ip, command: '[REDACTED]', cwd: executionPath, length: command?.length });
   try {
-    const vibeProcess = spawn('vibe', command.split(' '), {
+    const shellProcess = spawn(defaultShell, [shellFlag, command], {
       cwd: executionPath, shell: true, stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, NODE_ENV: NODE_ENV }
     });
@@ -304,7 +312,7 @@ wss.on('connection', (ws, req) => {
   clients.set(clientId, { ws, ip, connectedAt: new Date() });
   ws.on('close', () => { clients.delete(clientId); logger.info('WebSocket connection closed', { clientId, ip }); });
   ws.on('error', (err) => { logger.error('WebSocket error', { clientId, ip, error: err.message }); clients.delete(clientId); });
-  let vibeProcess = null; let currentCommand = null;
+  let shellProcess = null; let currentCommand = null;
   ws.on('message', (message) => {
     try {
       let data; try { data = JSON.parse(message.toString()); } catch { ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON format' })); return; }
@@ -312,27 +320,27 @@ wss.on('connection', (ws, req) => {
       if (!data.type) { ws.send(JSON.stringify({ type: 'error', message: 'Message type is required' })); return; }
       switch (data.type) {
         case 'execute':
-          if (vibeProcess) { vibeProcess.kill('SIGTERM'); logger.info('Terminated previous process', { clientId, pid: vibeProcess.pid }); vibeProcess = null; }
+          if (shellProcess) { shellProcess.kill('SIGTERM'); logger.info('Terminated previous process', { clientId, pid: shellProcess.pid }); shellProcess = null; }
           const validation = validateCommand(data.command);
           if (!validation.valid) { ws.send(JSON.stringify({ type: 'error', message: validation.error })); return; }
           currentCommand = data.command;
           let executionPath = process.cwd();
           if (data.cwd) { const validatedCwd = sanitizePath(data.cwd); if (!validatedCwd) { ws.send(JSON.stringify({ type: 'error', message: 'Invalid working directory' })); return; } executionPath = validatedCwd; }
           logger.info('Executing command via WebSocket', { clientId, ip, commandLength: data.command?.length });
-          vibeProcess = spawn('vibe', data.command?.split(' ') || [], { cwd: executionPath, shell: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, NODE_ENV: NODE_ENV } });
-          const timeout = setTimeout(() => { if (vibeProcess) { vibeProcess.kill('SIGTERM'); logger.warn('Command timeout (WebSocket)', { clientId, pid: vibeProcess.pid }); ws.send(JSON.stringify({ type: 'error', message: 'Command timeout after 30 minutes' })); vibeProcess = null; } }, 30 * 60 * 1000);
-          vibeProcess.stdout.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() })); });
-          vibeProcess.stderr.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString() })); });
-          vibeProcess.on('close', (code) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code: code })); logger.info('WebSocket command completed', { clientId, pid: vibeProcess.pid, exitCode: code }); vibeProcess = null; currentCommand = null; });
-          vibeProcess.on('error', (err) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message })); logger.error('WebSocket command error', { clientId, pid: vibeProcess?.pid, error: err.message }); vibeProcess = null; currentCommand = null; });
-          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'started', pid: vibeProcess.pid }));
+          shellProcess = spawn(defaultShell, [shellFlag, data.command || ''], { cwd: executionPath, shell: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, NODE_ENV: NODE_ENV } });
+          const timeout = setTimeout(() => { if (shellProcess) { shellProcess.kill('SIGTERM'); logger.warn('Command timeout (WebSocket)', { clientId, pid: shellProcess.pid }); ws.send(JSON.stringify({ type: 'error', message: 'Command timeout after 30 minutes' })); shellProcess = null; } }, 30 * 60 * 1000);
+          shellProcess.stdout.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() })); });
+          shellProcess.stderr.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString() })); });
+          shellProcess.on('close', (code) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code: code })); logger.info('WebSocket command completed', { clientId, pid: shellProcess.pid, exitCode: code }); shellProcess = null; currentCommand = null; });
+          shellProcess.on('error', (err) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message })); logger.error('WebSocket command error', { clientId, pid: shellProcess?.pid, error: err.message }); shellProcess = null; currentCommand = null; });
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'started', pid: shellProcess.pid }));
           break;
         case 'interrupt':
-          if (vibeProcess) { logger.info('Interrupt requested', { clientId, pid: vibeProcess.pid }); vibeProcess.kill('SIGINT'); vibeProcess = null; }
+          if (shellProcess) { logger.info('Interrupt requested', { clientId, pid: shellProcess.pid }); shellProcess.kill('SIGINT'); shellProcess = null; }
           if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'interrupted' }));
           break;
         case 'kill':
-          if (vibeProcess) { logger.info('Kill requested', { clientId, pid: vibeProcess.pid }); vibeProcess.kill('SIGKILL'); vibeProcess = null; }
+          if (shellProcess) { logger.info('Kill requested', { clientId, pid: shellProcess.pid }); shellProcess.kill('SIGKILL'); shellProcess = null; }
           if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'killed' }));
           break;
         case 'ping':
