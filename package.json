@@ -1,5 +1,5 @@
 {
-  "name": "vibe-remote-harness",
+  "name": "vibe-remote-harness-mistral",
   "version": "1.0.0",
   "description": "ISO 27001 Compliant - Remote HTML Harness for Mistral Vibe CLI Agent",
   "main": "src/server/index.js",
@@ -15,8 +15,8 @@
     "clean": "rm -rf node_modules logs dist build",
     "setup": "bash scripts/setup.sh",
     "setup:win": "scripts\\setup.bat",
-    "docker:build": "docker build -t vibe-remote-harness .",
-    "docker:run": "docker run -p 3000:3000 -v $(pwd)/logs:/app/logs vibe-remote-harness",
+    "docker:build": "docker build -t vibe-remote-harness-mistral .",
+    "docker:run": "docker run -p 3000:3000 -v $(pwd)/logs:/app/logs vibe-remote-harness-mistral",
     "git:init": "bash scripts/git-init.sh",
     "git:init:win": "scripts\\git-init.bat"
   },
@@ -24,6 +24,7 @@
     "vibe",
     "remote",
     "harness",
+    "mistral",
     "ai",
     "agent",
     "iso-27001",
@@ -33,13 +34,13 @@
   ],
   "author": "",
   "license": "MIT",
-  "homepage": "https://github.com/[your-username]/vibe-remote-harness#readme",
+  "homepage": "https://github.com/[your-username]/vibe-remote-harness-mistral#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/[your-username]/vibe-remote-harness.git"
+    "url": "git+https://github.com/[your-username]/vibe-remote-harness-mistral.git"
   },
   "bugs": {
-    "url": "https://github.com/[your-username]/vibe-remote-harness/issues"
+    "url": "https://github.com/[your-username]/vibe-remote-harness-mistral/issues"
   },
   "engines": {
     "node": ">=18.0.0",

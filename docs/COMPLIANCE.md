@@ -1,4 +1,4 @@
-# ISO 27001 Compliance Matrix - Vibe Remote Harness
+# ISO 27001 Compliance Matrix - Vibe Remote Harness Mistral
 
 > **Comprehensive Compliance Assessment Against ISO/IEC 27001:2022**
 

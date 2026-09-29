@@ -1,4 +1,4 @@
-# Security Policy - Vibe Remote Harness
+# Security Policy - Vibe Remote Harness Mistral
 
 > **ISO 27001:2022 Compliant Security Documentation**
 

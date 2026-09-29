@@ -1,4 +1,4 @@
-# System Architecture - Vibe Remote Harness
+# System Architecture - Vibe Remote Harness Mistral
 
 > **ISO 27001:2022 Compliant Architecture Documentation**
 

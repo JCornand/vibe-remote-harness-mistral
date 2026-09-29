@@ -1,11 +1,11 @@
 @echo off
-REM Vibe Remote Harness - Git Initialization Script (Windows)
+REM Vibe Remote Harness Mistral - Git Initialization Script (Windows)
 REM ISO 27001 Compliant
 
 SETLOCAL EnableDelayedExpansion
 
 ECHO ========================================================================
-ECHO  Vibe Remote Harness - Git Initialization
+ECHO  Vibe Remote Harness Mistral - Git Initialization
 ECHO ========================================================================
 ECHO.
 
@@ -64,7 +64,7 @@ ECHO.
 
 REM First commit
 ECHO [STEP 4/5] Creating first commit...
-git commit -m "Initial commit: Vibe Remote Harness ISO 27001 compliant project
+git commit -m "Initial commit: Vibe Remote Harness Mistral ISO 27001 compliant project
 
 Project Structure:
 - src/server: Express + WebSocket server with security controls

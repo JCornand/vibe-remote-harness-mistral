@@ -1,4 +1,4 @@
-# Points d'Amelioration - Vibe Remote Harness
+# Points d'Amelioration - Vibe Remote Harness Mistral
 
 > **Comprehensive Improvement Roadmap**
 

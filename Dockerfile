@@ -1,4 +1,4 @@
-# Vibe Remote Harness - Dockerfile
+# Vibe Remote Harness Mistral - Dockerfile
 # ISO 27001 Compliant
 
 # ============================================================================

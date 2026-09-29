@@ -1,4 +1,4 @@
-# Vibe Remote Harness
+# Vibe Remote Harness Mistral
 
 > **ISO 27001 Compliant** - Remote HTML Harness for Mistral Vibe CLI Agent
 
