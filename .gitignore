@@ -1,0 +1,197 @@
+# Vibe Remote Harness - Git Ignore File
+# ISO 27001 Compliant
+
+# ============================================================================
+# SECURITY: Sensitive Files (ISO 27001 - A.9.2.4, A.9.4.2)
+# ============================================================================
+
+# Environment variables - NEVER commit these
+.env
+.env.local
+.env.*.local
+.env.development
+.env.staging
+.env.production
+.env.test
+
+# Encryption keys and certificates
+*.key
+*.pem
+*.crt
+*.cer
+*.pfx
+*.p12
+*.jks
+*.keystore
+
+# Secret files
+*.secret
+*secrets*
+*credentials*
+*passwords*
+
+# ============================================================================
+# NODE.JS
+# ============================================================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# npm packages
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+.coverage/
+
+# Lock files (if not needed for reproducibility)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Cache directories
+.cache/
+.tmp/
+.temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ============================================================================
+# LOGS (ISO 27001 - A.12.4.1, A.12.4.2)
+# ============================================================================
+
+# Application logs
+logs/
+*.log
+*.log.*
+nohup.out
+
+# System logs
+/core
+*.core
+
+# Debug logs
+*.debug
+*.trace
+
+# ============================================================================
+# IDE / EDITOR
+# ============================================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Atom
+.atom/
+
+# Eclipse
+.metadata/
+bin/
+
+# ============================================================================
+# TESTING
+# ============================================================================
+
+# Test coverage
+.nyc_output/
+coverage/
+
+# Test databases
+*.sqlite
+*.db
+
+# Test artifacts
+/tmp/
+/temp/
+
+# ============================================================================
+# BUILD & DEPLOYMENT
+# ============================================================================
+
+# Docker
+.docker/
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Kubernetes
+.k8s/
+
+# CI/CD
+.github/
+.gitlab/
+.circleci/
+.appveyor.yml
+.travis.yml
+
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
+
+# Generated documentation
+/docs/build/
+/docs/dist/
+
+# ============================================================================
+# SECURITY EXCEPTIONS
+# ============================================================================
+
+# Configuration files (committed with dummy/safe values)
+config/security.json
+config/server.json
+
+# Public configuration
+*.example
+*.sample
+*.template
+
+# ============================================================================
+# NOTES
+# ============================================================================
+
+# This .gitignore file follows best practices for:
+# - Node.js projects
+# - Security-sensitive applications (ISO 27001)
+# - Web applications
+#
+# NEVER commit:
+# - Environment variables with real values
+# - Encryption keys or certificates
+# - Passwords or credentials
+# - API keys or tokens
+# - Database connection strings
+# - Any file containing secrets
+#
+# Always use .env files for configuration and add them to .gitignore
+# Use environment-specific configuration files with safe defaults
+
+# For more information, see:
+# - https://github.com/github/gitignore/blob/main/Node.gitignore
+# - https://owasp.org/www-project-cheat-sheets/cheatsheets/Git_Cheat_Sheet.html
