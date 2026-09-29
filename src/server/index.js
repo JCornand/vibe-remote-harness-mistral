@@ -107,8 +107,8 @@ const validateCommand = (command) => {
   }
   const dangerousPatterns = [
     /;\s*rm\s+-rf/,
-    /;\s*rmdir\s+\/\s*,
-    /;\s*dd\s+if=\//,
+    new RegExp(';\\s*rmdir\\s+\\/\\s*'),
+    new RegExp(';\\s*dd\\s+if=.*'),
     /;\s*mkfs/,
     /;\s*chmod\s+777/,
     /;\s*wget\s+.*\|\s*sh/,
