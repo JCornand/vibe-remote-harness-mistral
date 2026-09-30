@@ -16,9 +16,16 @@ const statusText = document.getElementById('statusText');
 const connectionStatus = document.getElementById('connectionStatus');
 const currentAction = document.getElementById('currentAction');
 const interruptBtn = document.getElementById('interruptBtn');
+const killBtn = document.getElementById('killBtn');
 const clearBtn = document.getElementById('clearBtn');
 const wsUrlElement = document.getElementById('wsUrl');
+const httpUrlElement = document.getElementById('httpUrl');
 const currentDirElement = document.getElementById('currentDir');
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsPanel = document.getElementById('settingsPanel');
+const settingsClose = document.getElementById('settingsClose');
+const cwdInput = document.getElementById('cwdInput');
+const applyCwdBtn = document.getElementById('applyCwdBtn');
 
 // State
 let ws = null;
@@ -26,6 +33,13 @@ let conversations = [];
 let currentConversation = null;
 let currentProcessId = null;
 let isProcessing = false;
+let currentCwd = null;
+let activeBubble = null;
+let streamBuffer = '';
+let reconnectTimer = null;
+
+const RECONNECT_DELAY_MS = 3000;
+const MAX_SEND_RETRIES = 20;
 
 // Auto-resizing textarea
 promptInput.addEventListener('input', () => {
@@ -35,10 +49,22 @@ promptInput.addEventListener('input', () => {
 
 // Initialize
 function init() {
+    showConnectionUrls();
     loadConversations();
     connectWebSocket();
     setupEventListeners();
     updateActionState();
+}
+
+// Derive connection URLs from the page location so any port works
+function showConnectionUrls() {
+    wsUrlElement.textContent = getWebSocketUrl();
+    httpUrlElement.textContent = location.origin;
+}
+
+function getWebSocketUrl() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.host}/ws`;
 }
 
 // Setup event listeners
@@ -47,6 +73,10 @@ function setupEventListeners() {
     newConversationBtn.addEventListener('click', newConversation);
     clearBtn.addEventListener('click', clearChat);
     interruptBtn.addEventListener('click', () => sendWebSocketMessage({ type: 'interrupt' }));
+    killBtn.addEventListener('click', () => sendWebSocketMessage({ type: 'kill' }));
+    settingsToggle.addEventListener('click', () => settingsPanel.classList.add('active'));
+    settingsClose.addEventListener('click', () => settingsPanel.classList.remove('active'));
+    applyCwdBtn.addEventListener('click', applyCwd);
     
     promptInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -54,11 +84,43 @@ function setupEventListeners() {
             handleSend();
         }
     });
+
+    // Ctrl+C interrupts the running process (matches the button label)
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key.toLowerCase() === 'c' && isProcessing) {
+            e.preventDefault();
+            sendWebSocketMessage({ type: 'interrupt' });
+        }
+    });
+}
+
+// Change the server working directory via POST /api/cwd
+function applyCwd() {
+    const newPath = cwdInput.value.trim();
+    if (!newPath) return;
+    fetch('/api/cwd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: newPath })
+    })
+        .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        })
+        .then(data => {
+            currentCwd = data.cwd || null;
+            currentDirElement.textContent = currentCwd || 'Unknown';
+            cwdInput.value = '';
+        })
+        .catch(err => {
+            console.error('Failed to change working directory:', err);
+            currentAction.textContent = `Directory change failed: ${err.message}`;
+        });
 }
 
 // Connect to WebSocket server
 function connectWebSocket() {
-    const wsUrl = wsUrlElement.textContent;
+    const wsUrl = getWebSocketUrl();
     
     try {
         ws = new WebSocket(wsUrl);
@@ -68,16 +130,7 @@ function connectWebSocket() {
             updateConnectionStatus(true);
             statusText.textContent = 'Connected';
             serverStatus.classList.remove('disconnected');
-            
-            // Request current directory
-            fetch('/api/cwd')
-                .then(r => r.json())
-                .then(data => {
-                    currentDirElement.textContent = data.cwd || 'Unknown';
-                })
-                .catch(() => {
-                    currentDirElement.textContent = 'Unknown';
-                });
+            refreshCwd();
         };
         
         ws.onclose = () => {
@@ -85,9 +138,16 @@ function connectWebSocket() {
             updateConnectionStatus(false);
             statusText.textContent = 'Disconnected';
             serverStatus.classList.add('disconnected');
-            
-            // Attempt to reconnect after 3 seconds
-            setTimeout(connectWebSocket, 3000);
+            if (isProcessing) {
+                isProcessing = false;
+                currentProcessId = null;
+                updateActionState();
+                currentAction.textContent = 'Disconnected';
+                if (activeBubble) {
+                    finalizeStream('\n[Connection lost]');
+                }
+            }
+            scheduleReconnect();
         };
         
         ws.onerror = (error) => {
@@ -105,8 +165,30 @@ function connectWebSocket() {
         console.error('Failed to connect WebSocket:', error);
         updateConnectionStatus(false);
         statusText.textContent = 'Connection failed';
-        setTimeout(connectWebSocket, 3000);
+        scheduleReconnect();
     }
+}
+
+// Fetch the current working directory from the server
+function refreshCwd() {
+    fetch('/api/cwd')
+        .then(r => r.json())
+        .then(data => {
+            currentCwd = data.cwd || null;
+            currentDirElement.textContent = currentCwd || 'Unknown';
+        })
+        .catch(() => {
+            currentDirElement.textContent = 'Unknown';
+        });
+}
+
+// Single pending reconnect attempt, never stacks timers
+function scheduleReconnect() {
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectWebSocket();
+    }, RECONNECT_DELAY_MS);
 }
 
 // Update connection status UI
@@ -119,13 +201,14 @@ function updateConnectionStatus(connected) {
 }
 
 // Send WebSocket message
-function sendWebSocketMessage(message) {
+function sendWebSocketMessage(message, attempt = 0) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(message));
+    } else if (ws && ws.readyState === WebSocket.CONNECTING && attempt < MAX_SEND_RETRIES) {
+        setTimeout(() => sendWebSocketMessage(message, attempt + 1), 500);
     } else {
         console.warn('WebSocket not connected, cannot send message');
-        // Queue the message and send when connected
-        setTimeout(() => sendWebSocketMessage(message), 1000);
+        currentAction.textContent = 'Not connected';
     }
 }
 
@@ -139,19 +222,23 @@ function handleWebSocketMessage(data) {
             break;
             
         case 'started':
+            if (activeBubble) {
+                finalizeStream('\n[Superseded by a new command]');
+            }
             currentProcessId = data.pid;
             isProcessing = true;
             updateActionState();
             currentAction.textContent = `Running (PID: ${data.pid})`;
-            addAssistantMessage('Thinking...', true);
+            streamBuffer = '';
+            activeBubble = startAssistantStream();
             break;
             
         case 'stdout':
-            updateLastAssistantMessage(data.data, false);
+            appendStreamChunk(data.data || '');
             break;
             
         case 'stderr':
-            updateLastAssistantMessage(data.data, false);
+            appendStreamChunk(data.data || '');
             break;
             
         case 'exit':
@@ -159,15 +246,15 @@ function handleWebSocketMessage(data) {
             currentProcessId = null;
             updateActionState();
             currentAction.textContent = `Exited with code ${data.code}`;
-            updateLastAssistantMessage('\n[Process finished]', true);
+            finalizeStream(`\n[Process finished with exit code ${data.code}]`);
             break;
             
         case 'error':
             isProcessing = false;
             currentProcessId = null;
             updateActionState();
-            updateLastAssistantMessage(`\nError: ${data.message}`, true);
             currentAction.textContent = 'Error';
+            finalizeStream(`\nError: ${data.message}`);
             break;
             
         case 'interrupted':
@@ -175,8 +262,14 @@ function handleWebSocketMessage(data) {
             isProcessing = false;
             currentProcessId = null;
             updateActionState();
-            updateLastAssistantMessage('\n[Process interrupted]', true);
             currentAction.textContent = data.type === 'killed' ? 'Killed' : 'Interrupted';
+            finalizeStream('\n[Process interrupted]');
+            break;
+            
+        case 'server_shutdown':
+            if (activeBubble) {
+                finalizeStream('\n[Server is shutting down]');
+            }
             break;
             
         default:
@@ -188,26 +281,79 @@ function handleWebSocketMessage(data) {
 function handleSend() {
     const text = promptInput.value.trim();
     if (!text || isProcessing) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        currentAction.textContent = 'Not connected';
+        return;
+    }
     
     // Add user message
     addUserMessage(text);
     promptInput.value = '';
     promptInput.style.height = 'auto';
     
-    // Determine if this is a command or a chat message
-    let command = text;
-    
-    // If it doesn't start with a known command, treat it as a chat message
-    // For chat mode, we'd need to pass it differently, but for now we'll treat everything as a command
-    
     // Send to server
     sendWebSocketMessage({
         type: 'execute',
-        command: command,
-        cwd: currentDirElement.textContent
+        command: text,
+        cwd: currentCwd || undefined
     });
     
     currentAction.textContent = 'Processing...';
+}
+
+// --- Streaming output handling ---
+
+// Create the assistant bubble that will receive streamed output
+function startAssistantStream() {
+    const messageDiv = createMessageElement('assistant', '', true);
+    chatArea.appendChild(messageDiv);
+    chatArea.classList.remove('empty');
+    scrollToBottom();
+    if (currentConversation) {
+        currentConversation.messages.push({
+            role: 'assistant',
+            content: '',
+            timestamp: new Date().toISOString(),
+            isStreaming: true
+        });
+    }
+    return messageDiv.querySelector('.bubble');
+}
+
+// Append a chunk to the active bubble, rendering the accumulated buffer
+function appendStreamChunk(chunk) {
+    if (!activeBubble) {
+        activeBubble = startAssistantStream();
+    }
+    streamBuffer += chunk;
+    activeBubble.innerHTML = formatMessage(streamBuffer, false);
+    updateStoredStream(false);
+    scrollToBottom();
+}
+
+// Close the active bubble with a trailing status line
+function finalizeStream(suffix) {
+    if (!activeBubble) {
+        activeBubble = startAssistantStream();
+    }
+    streamBuffer += suffix;
+    activeBubble.innerHTML = formatMessage(streamBuffer, true);
+    updateStoredStream(true);
+    activeBubble = null;
+    streamBuffer = '';
+    scrollToBottom();
+}
+
+// Mirror the streamed buffer into the persisted conversation
+function updateStoredStream(final) {
+    if (!currentConversation || currentConversation.messages.length === 0) return;
+    const lastMsg = currentConversation.messages[currentConversation.messages.length - 1];
+    if (lastMsg.role !== 'assistant') return;
+    lastMsg.content = streamBuffer;
+    if (final) {
+        lastMsg.isStreaming = false;
+        saveConversations();
+    }
 }
 
 // Add user message to chat
@@ -228,7 +374,7 @@ function addUserMessage(text) {
     }
 }
 
-// Add assistant message to chat
+// Add assistant message to chat (non-streaming, e.g. welcome text)
 function addAssistantMessage(text, isStreaming) {
     const messageDiv = createMessageElement('assistant', text, isStreaming);
     chatArea.appendChild(messageDiv);
@@ -247,36 +393,6 @@ function addAssistantMessage(text, isStreaming) {
     }
 }
 
-// Update last assistant message (for streaming)
-function updateLastAssistantMessage(text, isComplete) {
-    const messages = chatArea.querySelectorAll('.message.assistant');
-    const lastMessage = messages[messages.length - 1];
-    
-    if (lastMessage) {
-        const bubble = lastMessage.querySelector('.bubble');
-        if (bubble) {
-            // Handle markdown in the response
-            const formattedText = formatMessage(text, isComplete);
-            bubble.innerHTML = formattedText;
-            
-            // Update in conversation
-            if (currentConversation && currentConversation.messages.length > 0) {
-                const lastMsg = currentConversation.messages[currentConversation.messages.length - 1];
-                if (lastMsg.role === 'assistant') {
-                    if (isComplete) {
-                        lastMsg.content += text;
-                        lastMsg.isStreaming = false;
-                    } else {
-                        lastMsg.content = (lastMsg.content || '') + text;
-                    }
-                    saveConversations();
-                }
-            }
-        }
-    }
-    scrollToBottom();
-}
-
 // Create message element
 function createMessageElement(role, content, isStreaming = false) {
     const messageDiv = document.createElement('div');
@@ -292,7 +408,7 @@ function createMessageElement(role, content, isStreaming = false) {
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     
-    if (isStreaming) {
+    if (isStreaming && !content) {
         bubble.innerHTML = '<span class="status"><span class="status-dots"><span></span><span></span><span></span></span></span>';
     } else {
         bubble.innerHTML = formatMessage(content, !isStreaming);
@@ -337,7 +453,7 @@ function formatMessage(text, isComplete) {
     formatted = formatted.replace(/\n/g, '<br>');
     
     // Terminal-like output (for command results)
-    if (isComplete && formatted.includes('$ ') || formatted.includes('> ')) {
+    if (isComplete && (formatted.includes('$ ') || formatted.includes('> '))) {
         formatted = `<pre class="terminal-output">${formatted}</pre>`;
     }
     
@@ -359,6 +475,7 @@ function scrollToBottom() {
 // Update action button state
 function updateActionState() {
     interruptBtn.disabled = !isProcessing;
+    killBtn.disabled = !isProcessing;
 }
 
 // New conversation
@@ -481,7 +598,7 @@ function renderChatHistory() {
     chatArea.classList.remove('empty');
     
     currentConversation.messages.forEach(msg => {
-        const messageDiv = createMessageElement(msg.role, msg.content, msg.isStreaming);
+        const messageDiv = createMessageElement(msg.role, msg.content, msg.isStreaming && !msg.content);
         chatArea.appendChild(messageDiv);
     });
     
@@ -492,20 +609,21 @@ function renderChatHistory() {
 document.addEventListener('DOMContentLoaded', init);
 
 // Handle page visibility changes to reconnect WebSocket
- document.addEventListener('visibilitychange', () => {
+document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         // Check if WebSocket is still connected
         if (ws && ws.readyState !== WebSocket.OPEN) {
-            connectWebSocket();
+            scheduleReconnect();
         }
     }
 });
 
-// Export for debugging
+// Export for debugging (getters expose live state)
 window.vibeHarness = {
-    ws,
-    conversations,
-    currentConversation,
+    get ws() { return ws; },
+    get conversations() { return conversations; },
+    get currentConversation() { return currentConversation; },
+    get currentCwd() { return currentCwd; },
     sendWebSocketMessage,
     connectWebSocket
 };

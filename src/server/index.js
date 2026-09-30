@@ -271,19 +271,19 @@ app.post('/api/execute', (req, res) => {
     });
     let output = ''; let error = ''; let timedOut = false;
     const timeout = setTimeout(() => {
-      timedOut = true; vibeProcess.kill('SIGTERM');
-      logger.warn('Command timeout', { ip, pid: vibeProcess.pid });
+      timedOut = true; shellProcess.kill('SIGTERM');
+      logger.warn('Command timeout', { ip, pid: shellProcess.pid });
     }, 30 * 60 * 1000);
-    vibeProcess.stdout.on('data', (data) => { output += data.toString(); });
-    vibeProcess.stderr.on('data', (data) => { error += data.toString(); });
-    vibeProcess.on('close', (code) => {
+    shellProcess.stdout.on('data', (data) => { output += data.toString(); });
+    shellProcess.stderr.on('data', (data) => { error += data.toString(); });
+    shellProcess.on('close', (code) => {
       clearTimeout(timeout);
-      logger.info('Command execution completed', { ip, pid: vibeProcess.pid, exitCode: code });
+      logger.info('Command execution completed', { ip, pid: shellProcess.pid, exitCode: code });
       res.json({ success: code === 0, output, error, exitCode: code, timedOut });
     });
-    vibeProcess.on('error', (err) => {
+    shellProcess.on('error', (err) => {
       clearTimeout(timeout);
-      logger.error('Command execution error', { ip, pid: vibeProcess.pid, error: err.message });
+      logger.error('Command execution error', { ip, pid: shellProcess.pid, error: err.message });
       res.status(500).json({ error: err.message });
     });
   } catch (err) {
@@ -327,13 +327,13 @@ wss.on('connection', (ws, req) => {
           let executionPath = process.cwd();
           if (data.cwd) { const validatedCwd = sanitizePath(data.cwd); if (!validatedCwd) { ws.send(JSON.stringify({ type: 'error', message: 'Invalid working directory' })); return; } executionPath = validatedCwd; }
           logger.info('Executing command via WebSocket', { clientId, ip, commandLength: data.command?.length });
-          shellProcess = spawn(defaultShell, [shellFlag, data.command || ''], { cwd: executionPath, shell: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, NODE_ENV: NODE_ENV } });
-          const timeout = setTimeout(() => { if (shellProcess) { shellProcess.kill('SIGTERM'); logger.warn('Command timeout (WebSocket)', { clientId, pid: shellProcess.pid }); ws.send(JSON.stringify({ type: 'error', message: 'Command timeout after 30 minutes' })); shellProcess = null; } }, 30 * 60 * 1000);
-          shellProcess.stdout.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() })); });
-          shellProcess.stderr.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString() })); });
-          shellProcess.on('close', (code) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code: code })); logger.info('WebSocket command completed', { clientId, pid: shellProcess.pid, exitCode: code }); shellProcess = null; currentCommand = null; });
-          shellProcess.on('error', (err) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message })); logger.error('WebSocket command error', { clientId, pid: shellProcess?.pid, error: err.message }); shellProcess = null; currentCommand = null; });
-          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'started', pid: shellProcess.pid }));
+          const proc = spawn(defaultShell, [shellFlag, data.command || ''], { cwd: executionPath, shell: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, NODE_ENV: NODE_ENV } }); shellProcess = proc;
+          const timeout = setTimeout(() => { if (shellProcess === proc) { proc.kill('SIGTERM'); logger.warn('Command timeout (WebSocket)', { clientId, pid: proc.pid }); ws.send(JSON.stringify({ type: 'error', message: 'Command timeout after 30 minutes' })); shellProcess = null; currentCommand = null; } }, 30 * 60 * 1000);
+          proc.stdout.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stdout', data: chunk.toString() })); });
+          proc.stderr.on('data', (chunk) => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'stderr', data: chunk.toString() })); });
+          proc.on('close', (code) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code: code })); logger.info('WebSocket command completed', { clientId, pid: proc.pid, exitCode: code }); if (shellProcess === proc) { shellProcess = null; currentCommand = null; } });
+          proc.on('error', (err) => { clearTimeout(timeout); if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'error', message: err.message })); logger.error('WebSocket command error', { clientId, pid: proc?.pid, error: err.message }); if (shellProcess === proc) { shellProcess = null; currentCommand = null; } });
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'started', pid: proc.pid }));
           break;
         case 'interrupt':
           if (shellProcess) { logger.info('Interrupt requested', { clientId, pid: shellProcess.pid }); shellProcess.kill('SIGINT'); shellProcess = null; }

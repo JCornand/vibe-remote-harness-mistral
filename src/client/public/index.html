@@ -424,6 +424,11 @@
             color: var(--text-primary);
         }
 
+        .action-btn:disabled {
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+
         /* Command Palette */
         .command-palette {
             position: fixed;
@@ -539,6 +544,22 @@
 
         .settings-label {
             font-size: 0.875rem;
+        }
+
+        .settings-input {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 0.375rem 0.5rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            margin-right: 0.5rem;
+        }
+
+        .settings-input:focus {
+            outline: none;
+            border-color: var(--accent);
         }
 
         .settings-value {
@@ -666,6 +687,7 @@
             <div class="status">
                 <span class="status-indicator" id="serverStatus"></span>
                 <span class="status-text" id="statusText">Connecting...</span>
+                <button class="action-btn" id="settingsToggle">Settings</button>
             </div>
         </header>
 
@@ -708,6 +730,7 @@
                     </div>
                     <div class="input-actions">
                         <button class="action-btn" id="interruptBtn" disabled>Interrupt (Ctrl+C)</button>
+                        <button class="action-btn" id="killBtn" disabled>Kill</button>
                         <button class="action-btn" id="clearBtn">Clear Chat</button>
                     </div>
                 </div>
@@ -730,7 +753,7 @@
                 </div>
                 <div class="settings-row">
                     <span class="settings-label">HTTP URL</span>
-                    <span class="settings-value">http://localhost:3000</span>
+                    <span class="settings-value" id="httpUrl">http://localhost:3000</span>
                 </div>
             </div>
             <div class="settings-section">
@@ -738,6 +761,10 @@
                 <div class="settings-row">
                     <span class="settings-label">Current Directory</span>
                     <span class="settings-value" id="currentDir">Loading...</span>
+                </div>
+                <div class="settings-row">
+                    <input type="text" class="settings-input" id="cwdInput" placeholder="C:\path\to\dir">
+                    <button class="action-btn" id="applyCwdBtn">Apply</button>
                 </div>
             </div>
         </div>
